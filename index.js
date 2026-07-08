@@ -12,6 +12,8 @@ if (!BOT_TOKEN) throw new Error('🚨 BOT_TOKEN is missing!');
 const bot   = new TelegramBot(BOT_TOKEN, { polling: true });
 const users = new Map();
 
+const TEMPMAIL_API_BASE = 'https://xalman-apis.vercel.app/api';
+
 const esc = (s = '') =>
   s.replace(/&/g, '&amp;')
    .replace(/</g, '&lt;')
@@ -19,16 +21,19 @@ const esc = (s = '') =>
    .replace(/"/g, '&quot;');
 
 const createTempMail = async () => {
-  const { data } = await axios.get('https://xnil.xnil.work.gd/xnil/tmgen');
-  return data?.data;
+  const { data } = await axios.get(`${TEMPMAIL_API_BASE}/gen`);
+  if (!data.status || !data.email) {
+    throw new Error('API did not return an email');
+  }
+  return { email: data.email };
 };
 
 const fetchInbox = async (email) => {
-  const { data } = await axios.get('https://xnil.xnil.work.gd/xnil/tminbox', {
-    params: { mail: email }
+  const { data } = await axios.get(`${TEMPMAIL_API_BASE}/check`, {
+    params: { email }
   });
-  if (!data || !data.data) return [];
-  return Array.isArray(data.data) ? data.data : [data.data];
+  if (!data.status || !data.messages) return [];
+  return data.messages;
 };
 
 // /start command: Show instructions & generate email
@@ -37,7 +42,7 @@ bot.onText(/\/start/, async (msg) => {
 
   try {
     const mail = await createTempMail();
-    users.set(chatId, { ...mail, lastId: null });
+    users.set(chatId, { ...mail, lastCount: 0 });
 
     const welcome = `
 👋 <b>Welcome to TempMail Bot</b>
@@ -78,7 +83,7 @@ bot.on('callback_query', async (q) => {
   if (q.data === 'RESET') {
     try {
       const mail = await createTempMail();
-      users.set(chatId, { ...mail, lastId: null });
+      users.set(chatId, { ...mail, lastCount: 0 });
       await respond('✅ New email address created!');
 
       const text = `
@@ -128,8 +133,9 @@ Then come back and click below to check inbox 👇
 
     try {
       const mails = await fetchInbox(user.email);
-      const newMails = mails.filter(m => m.id !== user.lastId);
-      if (!newMails.length) {
+      const previousCount = user.lastCount || 0;
+
+      if (!mails.length || mails.length <= previousCount) {
         await bot.editMessageText('📭 No new emails found. Try again later!', {
           chat_id: chatId,
           message_id: checkingMsg.message_id
@@ -137,17 +143,23 @@ Then come back and click below to check inbox 👇
         return;
       }
 
-      const mail = newMails[newMails.length - 1]; // latest mail
-      users.set(chatId, { ...user, lastId: mail.id });
+      const mail = mails[mails.length - 1]; // dernier message recu
+      users.set(chatId, { ...user, lastCount: mails.length });
+
+      const fromName = mail.from?.name || 'Unknown sender';
+      const fromAddress = mail.from?.address || 'N/A';
+      const body = (mail.body || mail.content || '(empty)')
+        .replace(/<\/?[^>]+(>|$)/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .trim();
 
       const mailText = `
 ✉️ <b>New Email</b>
-👤 <b>From:</b> <code>${esc(mail.from)}</code>
-📌 <b>Subject:</b> <code>${esc(mail.subject)}</code>
-🕒 <b>Time:</b> ${dayjs(mail.created_at).format('D MMM YYYY, h:mm A')}
+👤 <b>From:</b> <code>${esc(fromName)}</code> (<code>${esc(fromAddress)}</code>)
+📌 <b>Subject:</b> <code>${esc(mail.subject || 'No Subject')}</code>
 
 📝 <b>Message:</b>
-<pre>${esc(mail.body_text || '(empty)')}</pre>
+<pre>${esc(body)}</pre>
       `.trim();
 
       await bot.editMessageText(mailText, {
