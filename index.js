@@ -6,7 +6,7 @@ const axios = require('axios');
 const chalk = require('chalk'); // v4 – compatible with require()
 const dayjs = require('dayjs');
 
-const BOT_TOKEN = '7576017974:AAFI-hM8zWlv_grtJqXRBOU293YF-px4AFY';
+const BOT_TOKEN = '8685645915:AAF2t2en9eXi2IMcmk4Q7XprEdwJm5eXvYs';
 if (!BOT_TOKEN) throw new Error('🚨 BOT_TOKEN is missing!');
 
 const bot   = new TelegramBot(BOT_TOKEN, { polling: true });
